@@ -53,3 +53,10 @@ footer { padding:15px 24px; color:var(--muted); font-size:11px; border-top:1px s
   .inline-form { grid-template-columns:1fr; }
   .form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+select { width:100%; border:1px solid var(--line); border-radius:8px; background:white; padding:9px 10px; color:var(--ink); min-width:0; }
+.data-card .meta { color:var(--muted); font-size:12px; line-height:1.6; }
+.data-card .actions { display:flex; gap:7px; align-items:center; }
+.graph-legend { display:flex; flex-wrap:wrap; gap:12px; margin:12px 0; font-size:12px; }
+.graph-legend span { display:inline-flex; align-items:center; gap:5px; }
+.graph-legend i { display:inline-block; width:18px; height:3px; border-radius:3px; }

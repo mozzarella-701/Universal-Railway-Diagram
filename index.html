@@ -74,8 +74,9 @@
             <label>列車種別<input id="trainType" placeholder="例：普通"></label>
             <label>列車名・行先<input id="trainDestination" placeholder="例：石山寺行"></label>
             <label>表示色<input id="trainColor" type="color" value="#006d69"></label>
+            <label>運用番号<select id="trainOperation"><option value="">未割当</option></select></label>
           </div>
-          <p class="hint">各駅の時刻を HH:MM 形式で入力してください。通過駅は空欄で構いません。</p>
+          <p class="hint">各駅の時刻を HH:MM または HH:MM:SS 形式で入力してください。通過駅は空欄で構いません。番線も駅ごとに指定できます。</p>
           <div id="timeInputs" class="time-inputs"></div>
           <button class="primary" type="submit">列車を登録・更新</button>
         </form>
@@ -86,10 +87,15 @@
         <div class="section-heading">
           <div><p class="eyebrow">ROLLING STOCK</p><h2>車両運用</h2></div>
         </div>
+        <form id="operationForm" class="inline-form">
+          <input id="operationNumber" placeholder="運用番号（例：01）" required>
+          <input id="operationVehicle" placeholder="車両・編成（例：701F）">
+          <button class="primary" type="submit">運用を追加</button>
+        </form>
+        <div id="operationList" class="data-list"></div>
         <div class="notice">
-          <strong>運用管理モジュールの拡張予定</strong>
-          <p>この初期版では、列車と駅・時刻の登録、ダイヤ描画、JSON保存を実装しています。</p>
-          <p>次段階で車両編成、運用番号、入庫・出庫、列車間の運用つながり、運用変更履歴を追加します。</p>
+          <strong>運用連携について</strong>
+          <p>列車設定で運用番号を割り当てると、この一覧に該当列車が表示されます。入出庫時刻や運用の自動接続判定は次段階で追加します。</p>
         </div>
       </section>
     </section>
