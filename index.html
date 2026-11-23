@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#006d69">
+  <title>汎用ダイヤグラム</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">UNIVERSAL RAILWAY DIAGRAM</p>
+      <h1>汎用ダイヤグラム</h1>
+    </div>
+    <div class="toolbar">
+      <button id="newProjectBtn" class="secondary">新規作成</button>
+      <button id="importBtn" class="secondary">JSON読込</button>
+      <button id="exportBtn" class="primary">JSON保存</button>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <label class="field-label" for="routeName">路線名・ダイヤ名</label>
+      <input id="routeName" value="新しいダイヤ" maxlength="60">
+      <nav>
+        <button class="nav-item active" data-panel="diagram">ダイヤグラム</button>
+        <button class="nav-item" data-panel="stations">駅・番線設定</button>
+        <button class="nav-item" data-panel="trains">列車・時刻設定</button>
+        <button class="nav-item" data-panel="operations">車両運用</button>
+      </nav>
+      <div class="sidebar-note">
+        <strong>汎用設計</strong>
+        <p>路線・駅・列車を自由に登録できます。特定の鉄道路線には固定していません。</p>
+      </div>
+    </aside>
+
+    <section class="content">
+      <section id="panel-diagram" class="panel active">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TIMETABLE GRAPH</p>
+            <h2>ダイヤグラム</h2>
+          </div>
+          <span id="diagramSummary" class="muted"></span>
+        </div>
+        <div class="graph-wrap">
+          <svg id="diagram" role="img" aria-label="列車ダイヤグラム"></svg>
+        </div>
+        <p class="hint">駅・列車・時刻を登録すると、ここにスジが自動描画されます。</p>
+      </section>
+
+      <section id="panel-stations" class="panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">INFRASTRUCTURE</p><h2>駅・番線設定</h2></div>
+        </div>
+        <form id="stationForm" class="inline-form">
+          <input id="stationName" placeholder="駅名" required maxlength="40">
+          <input id="stationDistance" type="number" min="0" step="0.1" placeholder="起点からの距離 km" required>
+          <button class="primary" type="submit">駅を追加</button>
+        </form>
+        <div id="stationList" class="data-list"></div>
+      </section>
+
+      <section id="panel-trains" class="panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">TRAIN SCHEDULE</p><h2>列車・時刻設定</h2></div>
+        </div>
+        <form id="trainForm" class="train-form">
+          <div class="form-grid">
+            <label>列車番号<input id="trainNumber" placeholder="例：1001" required></label>
+            <label>列車種別<input id="trainType" placeholder="例：普通"></label>
+            <label>列車名・行先<input id="trainDestination" placeholder="例：石山寺行"></label>
+            <label>表示色<input id="trainColor" type="color" value="#006d69"></label>
+          </div>
+          <p class="hint">各駅の時刻を HH:MM 形式で入力してください。通過駅は空欄で構いません。</p>
+          <div id="timeInputs" class="time-inputs"></div>
+          <button class="primary" type="submit">列車を登録・更新</button>
+        </form>
+        <div id="trainList" class="data-list"></div>
+      </section>
+
+      <section id="panel-operations" class="panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">ROLLING STOCK</p><h2>車両運用</h2></div>
+        </div>
+        <div class="notice">
+          <strong>運用管理モジュールの拡張予定</strong>
+          <p>この初期版では、列車と駅・時刻の登録、ダイヤ描画、JSON保存を実装しています。</p>
+          <p>次段階で車両編成、運用番号、入庫・出庫、列車間の運用つながり、運用変更履歴を追加します。</p>
+        </div>
+      </section>
+    </section>
+  </main>
+  <footer>汎用ダイヤグラム — 初期開発版</footer>
+  <script src="app.js"></script>
+</body>
+</html>
