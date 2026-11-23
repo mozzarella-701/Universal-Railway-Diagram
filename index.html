@@ -30,6 +30,7 @@
         <button class="nav-item" data-panel="stations">駅・番線設定</button>
         <button class="nav-item" data-panel="trains">列車・時刻設定</button>
         <button class="nav-item" data-panel="operations">車両運用</button>
+        <button class="nav-item" data-panel="checks">番線・運用チェック</button>
       </nav>
       <div class="sidebar-note">
         <strong>汎用設計</strong>
@@ -76,7 +77,7 @@
             <label>表示色<input id="trainColor" type="color" value="#006d69"></label>
             <label>運用番号<select id="trainOperation"><option value="">未割当</option></select></label>
           </div>
-          <p class="hint">各駅の時刻を HH:MM または HH:MM:SS 形式で入力してください。通過駅は空欄で構いません。番線も駅ごとに指定できます。</p>
+          <p class="hint">各駅の時刻を HH:MM または HH:MM:SS 形式で入力してください。通過駅は空欄で構いません。</p>
           <div id="timeInputs" class="time-inputs"></div>
           <button class="primary" type="submit">列車を登録・更新</button>
         </form>
@@ -94,9 +95,24 @@
         </form>
         <div id="operationList" class="data-list"></div>
         <div class="notice">
-          <strong>運用連携について</strong>
-          <p>列車設定で運用番号を割り当てると、この一覧に該当列車が表示されます。入出庫時刻や運用の自動接続判定は次段階で追加します。</p>
+          <strong>運用管理について</strong>
+          <p>登録した運用番号を列車に割り当てると、運用一覧に列車が表示されます。</p>
         </div>
+      </section>
+      <section id="panel-checks" class="panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">CONFLICT & CONNECTION CHECK</p><h2>番線・運用チェック</h2></div>
+          <button id="refreshChecks" class="secondary">再チェック</button>
+        </div>
+        <div class="notice">
+          <strong>チェックの判定条件</strong>
+          <p>番線チェックは、同じ駅・同じ番線・同じ時刻に複数列車が設定されていないかを確認します。停車時間の重複まではまだ判定しません。</p>
+          <p>運用チェックは、同一運用内の列車を時刻順に並べ、前列車の到着駅と次列車の出発駅が一致するか、時刻が逆転していないかを確認します。</p>
+        </div>
+        <h3>番線設定チェック</h3>
+        <div id="platformChecks" class="data-list"></div>
+        <h3>車両運用の接続チェック</h3>
+        <div id="operationChecks" class="data-list"></div>
       </section>
     </section>
   </main>

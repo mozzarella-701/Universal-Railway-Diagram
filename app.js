@@ -140,6 +140,110 @@
     if(!state.operations.length)list.innerHTML='<p class="hint">運用がまだ登録されていません。</p>';
   }
 
+
+  function getTrainPath(train) {
+    const events = state.stations.map((station,index) => {
+      const raw = train.times?.[station.id];
+      const seconds = raw ? parseTime(raw) : null;
+      return seconds === null ? null : { station, index, seconds, platform: train.platforms?.[station.id] || "" };
+    }).filter(Boolean).sort((a,b)=>a.index-b.index);
+    return events.length >= 2 ? { first:events[0], last:events[events.length-1], events } : null;
+  }
+
+  function makeCheckCard(title, detail, status) {
+    const card=document.createElement("div");
+    card.className=`data-card ${status==="error"?"status-error":status==="warn"?"status-warn":"status-ok"}`;
+    const info=document.createElement("div");
+    info.innerHTML=`<strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small>`;
+    const tag=document.createElement("span");
+    tag.className="status-tag";
+    tag.textContent=status==="error"?"要確認":status==="warn"?"注意":"OK";
+    card.append(info,tag);
+    return card;
+  }
+
+  function renderChecks() {
+    const platformBox=$("platformChecks"), operationBox=$("operationChecks");
+    if(!platformBox || !operationBox) return;
+    platformBox.innerHTML=""; operationBox.innerHTML="";
+    const platformEvents=[];
+    state.trains.forEach(train=>{
+      state.stations.forEach(station=>{
+        const time=train.times?.[station.id], platform=train.platforms?.[station.id];
+        const seconds=time?parseTime(time):null;
+        if(seconds!==null && platform) platformEvents.push({train,station,platform,seconds});
+      });
+    });
+    const grouped=new Map();
+    platformEvents.forEach(ev=>{
+      const key=[ev.station.id,ev.platform,ev.seconds].join("|");
+      if(!grouped.has(key))grouped.set(key,[]);
+      grouped.get(key).push(ev);
+    });
+    let conflictCount=0;
+    grouped.forEach(events=>{
+      if(events.length>1){
+        conflictCount++;
+        const e=events[0];
+        platformBox.append(makeCheckCard(
+          `${e.station.name} ${e.platform} ${fmt(e.seconds)}`,
+          `同時刻に複数列車：${events.map(x=>x.train.number).join("・")}`,
+          "error"
+        ));
+      }
+    });
+    if(!conflictCount){
+      platformBox.append(makeCheckCard("同時刻の番線重複なし",`${platformEvents.length}件の番線指定を確認しました（停車時間の重複は未判定）`,"ok"));
+    }
+
+    let operationCount=0;
+    state.operations.forEach(op=>{
+      const assigned=state.trains
+        .map(train=>({train,path:getTrainPath(train)}))
+        .filter(item=>item.train.operationId===op.id && item.path)
+        .sort((a,b)=>a.path.first.seconds-b.path.first.seconds);
+      if(!assigned.length){
+        operationBox.append(makeCheckCard(`運用 ${op.number}`, "割当列車または有効な時刻がありません","warn"));
+        operationCount++;
+        return;
+      }
+      let issues=0;
+      for(let i=0;i<assigned.length-1;i++){
+        const a=assigned[i],b=assigned[i+1];
+        const gap=b.path.first.seconds-a.path.last.seconds;
+        if(a.path.last.index!==b.path.first.index){
+          operationBox.append(makeCheckCard(
+            `運用 ${op.number}：${a.train.number} → ${b.train.number}`,
+            `前列車の到着駅は${a.path.last.station.name}、次列車の出発駅は${b.path.first.station.name}です。駅が一致しません。`,
+            "error"
+          ));
+          issues++;
+        } else if(gap<0){
+          operationBox.append(makeCheckCard(
+            `運用 ${op.number}：${a.train.number} → ${b.train.number}`,
+            `次列車の出発が前列車の到着より ${Math.abs(gap)} 秒早くなっています。`,
+            "error"
+          ));
+          issues++;
+        } else {
+          operationBox.append(makeCheckCard(
+            `運用 ${op.number}：${a.train.number} → ${b.train.number}`,
+            `${a.path.last.station.name}で接続。時刻差 ${Math.floor(gap/60)}分${gap%60}秒（折返し時間の適否は未判定）`,
+            "ok"
+          ));
+        }
+      }
+      if(assigned.length===1){
+        operationBox.append(makeCheckCard(`運用 ${op.number}`,`${assigned[0].train.number} のみ割当済み。接続先はありません`,"warn"));
+      }
+      operationCount++;
+    });
+    if(!state.operations.length) operationBox.append(makeCheckCard("運用未登録","先に車両運用を登録してください","warn"));
+    $("diagramSummary").textContent=`${state.stations.length}駅・${state.trains.length}列車・秒単位`;
+  }
+
+  $("refreshChecks")?.addEventListener("click",renderChecks);
+
   function renderDiagram(){
     const svg=$("diagram"),width=Math.max(700,state.stations.length*125+100),height=600;
     svg.setAttribute("viewBox",`0 0 ${width} ${height}`);svg.innerHTML="";
@@ -160,7 +264,7 @@
   }
 
   function renderAll(){
-    $("routeName").value=state.routeName;renderStations();renderTimeInputs();renderTrains();renderOperations();renderDiagram();saveLocal();
+    $("routeName").value=state.routeName;renderStations();renderTimeInputs();renderTrains();renderOperations();renderDiagram();renderChecks();saveLocal();
   }
 
   $("exportBtn").addEventListener("click",()=>{
