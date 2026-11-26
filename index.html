@@ -19,7 +19,7 @@
 </nav>
 <main>
 <section id="diagram" class="view active">
-  <div class="section-head"><div><p class="eyebrow">TIMETABLE GRAPH</p><h2>ダイヤグラム</h2></div><div class="tools"><button id="exportBtn" class="secondary">JSON書き出し</button><label class="secondary filebtn">JSON読み込み<input id="importFile" type="file" accept=".json,application/json"></label></div></div>
+  <div class="section-head"><div><p class="eyebrow">TIMETABLE GRAPH</p><h2>ダイヤグラム</h2></div><div class="tools"><button id="exportBtn" class="secondary">JSON書き出し</button><label class="secondary filebtn">JSON読み込み<input id="importFile" type="file" accept=".json,application/json"></label><label class="secondary filebtn">.oud読み込み<input id="oudFile" type="file" accept=".oud,.txt,text/plain"></label></div></div>
   <div class="diagram-wrap"><div id="diagramCanvas" class="diagram-canvas"><p class="empty">駅と列車を登録するとダイヤが表示されます。</p></div></div>
 </section>
 <section id="stations" class="view">
@@ -32,7 +32,7 @@
   <form id="trainForm" class="form-grid">
     <input id="trainNumber" placeholder="列車番号" required><input id="trainType" placeholder="種別"><input id="trainDestination" placeholder="行先">
     <input id="trainColor" type="color" value="#006d69" title="線色">
-    <select id="trainVehicle"></select><select id="trainOperation"></select><button>列車を追加</button>
+    <select id="trainVehicle"></select><button>列車を追加</button>
   </form>
   <div class="times-editor"><h3>駅ごとの時刻（到着・発車）</h3><div id="timesEditor"></div></div>
   <div id="trainList" class="list"></div>
