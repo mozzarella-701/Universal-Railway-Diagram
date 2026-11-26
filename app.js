@@ -62,12 +62,18 @@
     if(!state.stations.length)list.innerHTML='<p class="hint">駅がまだ登録されていません。</p>';
   }
 
+  const getArrival = (train, sid) => train?.arrivals?.[sid] || train?.times?.[sid] || "";
+  const getDeparture = (train, sid) => train?.departures?.[sid] || train?.times?.[sid] || "";
+
   function renderTimeInputs(train=null){
     const wrap=$("timeInputs");wrap.innerHTML="";
     state.stations.forEach(st=>{
-      const cell=document.createElement("label");cell.className="time-cell";cell.textContent=`${st.name}（時刻）`;
-      const input=document.createElement("input");input.placeholder="HH:MM:SS";input.inputMode="decimal";input.value=train?.times?.[st.id]||"";input.dataset.stationId=st.id;
-      cell.append(input);
+      const cell=document.createElement("div");cell.className="time-cell";
+      const title=document.createElement("strong");title.textContent=st.name;cell.append(title);
+      const arrLabel=document.createElement("label");arrLabel.textContent="到着";
+      const arr=document.createElement("input");arr.placeholder="HH:MM:SS";arr.inputMode="decimal";arr.value=getArrival(train,st.id);arr.dataset.stationId=st.id;arr.dataset.kind="arrival";arrLabel.append(arr);cell.append(arrLabel);
+      const depLabel=document.createElement("label");depLabel.textContent="発車";
+      const dep=document.createElement("input");dep.placeholder="HH:MM:SS";dep.inputMode="decimal";dep.value=getDeparture(train,st.id);dep.dataset.stationId=st.id;dep.dataset.kind="departure";depLabel.append(dep);cell.append(depLabel);
       const platform=document.createElement("select");platform.add(new Option("番線未指定",""));
       (st.tracks||[]).forEach(t=>platform.add(new Option(t,t)));
       platform.value=train?.platforms?.[st.id]||"";platform.dataset.platformStationId=st.id;
@@ -87,15 +93,19 @@
   $("trainForm").addEventListener("submit",e=>{
     e.preventDefault();
     if(!state.stations.length)return alert("先に駅を登録してください。");
-    const times={},platforms={};
+    const arrivals={},departures={},times={},platforms={};
     for(const input of document.querySelectorAll("#timeInputs input")){
       const v=input.value.trim();
       if(v&&parseTime(v)===null)return alert("時刻は HH:MM または HH:MM:SS 形式で入力してください。");
-      if(v)times[input.dataset.stationId]=v.length===5?v+":00":v;
+      if(v){const normalized=v.length===5?v+":00":v; (input.dataset.kind==="arrival"?arrivals:departures)[input.dataset.stationId]=normalized;}
     }
     document.querySelectorAll("#timeInputs select").forEach(input=>{if(input.value)platforms[input.dataset.platformStationId]=input.value;});
-    if(Object.keys(times).length<2)return alert("少なくとも2駅分の時刻を入力してください。");
-    const train={id:editingTrainId||makeId(),number:$("trainNumber").value.trim(),type:$("trainType").value.trim(),destination:$("trainDestination").value.trim(),color:$("trainColor").value,times,platforms,operationId:$("trainOperation").value};
+    const stationsWithTime=new Set([...Object.keys(arrivals),...Object.keys(departures)]);
+    if(stationsWithTime.size<2)return alert("少なくとも2駅分の時刻を入力してください。");
+    stationsWithTime.forEach(sid=>times[sid]=departures[sid]||arrivals[sid]);
+    // 同一駅で到着と発車の順序が逆転していないか確認
+    for(const sid of stationsWithTime){if(arrivals[sid]&&departures[sid]&&parseTime(departures[sid])<parseTime(arrivals[sid]))return alert("発車時刻が到着時刻より前になっています。");}
+    const train={id:editingTrainId||makeId(),number:$("trainNumber").value.trim(),type:$("trainType").value.trim(),destination:$("trainDestination").value.trim(),color:$("trainColor").value,arrivals,departures,times,platforms,operationId:$("trainOperation").value};
     const index=state.trains.findIndex(t=>t.id===train.id);
     if(index>=0)state.trains[index]=train;else state.trains.push(train);
     editingTrainId=null;e.target.reset();$("trainColor").value="#006d69";e.target.querySelector('button[type="submit"]').textContent="列車を登録・更新";setDirty();
@@ -143,11 +153,12 @@
 
   function getTrainPath(train) {
     const events = state.stations.map((station,index) => {
-      const raw = train.times?.[station.id];
-      const seconds = raw ? parseTime(raw) : null;
-      return seconds === null ? null : { station, index, seconds, platform: train.platforms?.[station.id] || "" };
+      const arrRaw=getArrival(train,station.id), depRaw=getDeparture(train,station.id);
+      const arr=arrRaw?parseTime(arrRaw):null, dep=depRaw?parseTime(depRaw):null;
+      const seconds=dep!==null?dep:arr;
+      return seconds===null?null:{station,index,seconds,arrival:arr,departure:dep,platform:train.platforms?.[station.id]||""};
     }).filter(Boolean).sort((a,b)=>a.index-b.index);
-    return events.length >= 2 ? { first:events[0], last:events[events.length-1], events } : null;
+    return events.length>=2?{first:events[0],last:events[events.length-1],events}:null;
   }
 
   function makeCheckCard(title, detail, status) {
@@ -169,27 +180,34 @@
     const platformEvents=[];
     state.trains.forEach(train=>{
       state.stations.forEach(station=>{
-        const time=train.times?.[station.id], platform=train.platforms?.[station.id];
-        const seconds=time?parseTime(time):null;
-        if(seconds!==null && platform) platformEvents.push({train,station,platform,seconds});
+        const arrRaw=getArrival(train,station.id),depRaw=getDeparture(train,station.id);
+        const arr=arrRaw?parseTime(arrRaw):null,dep=depRaw?parseTime(depRaw):null;
+        const start=arr!==null?arr:(dep!==null?dep:null),finish=dep!==null?dep:(arr!==null?arr:null);
+        const platform=train.platforms?.[station.id];
+        if(start!==null&&finish!==null&&platform)platformEvents.push({train,station,platform,start,finish});
       });
     });
     const grouped=new Map();
     platformEvents.forEach(ev=>{
-      const key=[ev.station.id,ev.platform,ev.seconds].join("|");
+      const key=[ev.station.id,ev.platform].join("|");
       if(!grouped.has(key))grouped.set(key,[]);
       grouped.get(key).push(ev);
     });
     let conflictCount=0;
     grouped.forEach(events=>{
-      if(events.length>1){
-        conflictCount++;
-        const e=events[0];
-        platformBox.append(makeCheckCard(
-          `${e.station.name} ${e.platform} ${fmt(e.seconds)}`,
-          `同時刻に複数列車：${events.map(x=>x.train.number).join("・")}`,
-          "error"
-        ));
+      events.sort((a,b)=>a.start-b.start);
+      for(let i=0;i<events.length;i++){
+        for(let j=i+1;j<events.length;j++){
+          if(events[j].start>events[i].finish)break;
+          if(events[i].train.id===events[j].train.id)continue;
+          conflictCount++;
+          const a=events[i],b=events[j];
+          platformBox.append(makeCheckCard(
+            `${a.station.name} ${a.platform}`,
+            `${a.train.number}（${fmt(a.start)}〜${fmt(a.finish)}）と ${b.train.number}（${fmt(b.start)}〜${fmt(b.finish)}）の使用時間が重複`,
+            "error"
+          ));
+        }
       }
     });
     if(!conflictCount){
@@ -250,14 +268,18 @@
     const NS="http://www.w3.org/2000/svg";
     const add=(tag,attrs,parent=svg,text=null)=>{const el=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));if(text!==null)el.textContent=text;parent.append(el);return el;};
     if(state.stations.length<2){add("text",{x:30,y:50,fill:"#687875","font-size":15},"駅を2つ以上登録するとダイヤを表示します。");$("diagramSummary").textContent="駅を登録してください";return;}
-    const vals=state.trains.flatMap(t=>Object.values(t.times||{}).map(parseTime)).filter(v=>v!==null);
+    const vals=state.trains.flatMap(t=>[...Object.values(t.arrivals||{}),...Object.values(t.departures||{}),...Object.values(t.times||{})].map(parseTime)).filter(v=>v!==null);
     const min=Math.floor((vals.length?Math.min(...vals):21600)/3600)*3600,max=Math.ceil((vals.length?Math.max(...vals):79200)/3600)*3600;
     const top=35,bottom=height-55,left=70,right=width-35;
     const x=i=>left+(right-left)*i/(state.stations.length-1),y=t=>bottom-(t-min)/(Math.max(3600,max-min))*(bottom-top);
     for(let h=Math.floor(min/3600);h<=Math.ceil(max/3600);h++){const yy=y(h*3600);add("line",{x1:left,y1:yy,x2:right,y2:yy,stroke:"#e5ecea","stroke-width":1});add("text",{x:left-12,y:yy+4,"text-anchor":"end",fill:"#687875","font-size":11},`${String(Math.floor(h)%24).padStart(2,"0")}:00`);}
     state.stations.forEach((st,i)=>{const xx=x(i);add("line",{x1:xx,y1:top,x2:xx,y2:bottom,stroke:"#cbd8d5","stroke-width":1});add("text",{x:xx,y:bottom+23,"text-anchor":"middle",fill:"#263936","font-size":12},st.name);});
     state.trains.forEach(t=>{
-      const pts=[];state.stations.forEach((st,i)=>{const time=t.times?.[st.id];if(time&&parseTime(time)!==null)pts.push(`${x(i)},${y(parseTime(time))}`);});
+      const pts=[];state.stations.forEach((st,i)=>{
+        const ar=getArrival(t,st.id),dp=getDeparture(t,st.id),a=ar?parseTime(ar):null,d=dp?parseTime(dp):null;
+        if(a!==null&&d!==null&&d>a)add("line",{x1:x(i),y1:y(a),x2:x(i),y2:y(d),stroke:t.color||"#006d69","stroke-width":3});
+        const tm=d!==null?d:a;if(tm!==null)pts.push(`${x(i)},${y(tm)}`);
+      });
       if(pts.length>=2){add("polyline",{points:pts.join(" "),fill:"none",stroke:t.color||"#006d69","stroke-width":2.5,"stroke-linejoin":"round","stroke-linecap":"round"});pts.forEach(p=>{const[cx,cy]=p.split(",");add("circle",{cx,cy,r:3.5,fill:t.color||"#006d69",stroke:"white","stroke-width":1});});}
     });
     $("diagramSummary").textContent=`${state.stations.length}駅・${state.trains.length}列車・秒単位`;
