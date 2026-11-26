@@ -88,9 +88,17 @@
         <div class="section-heading">
           <div><p class="eyebrow">ROLLING STOCK</p><h2>車両運用</h2></div>
         </div>
+        <h3>車両・編成登録</h3>
+        <form id="vehicleForm" class="inline-form">
+          <input id="vehicleName" placeholder="編成名・車号（例：701F）" required>
+          <input id="vehicleNotes" placeholder="メモ（任意）">
+          <button class="primary" type="submit">車両を登録</button>
+        </form>
+        <div id="vehicleList" class="data-list"></div>
+        <h3>運用登録</h3>
         <form id="operationForm" class="inline-form">
           <input id="operationNumber" placeholder="運用番号（例：01）" required>
-          <input id="operationVehicle" placeholder="車両・編成（例：701F）">
+          <select id="operationVehicle"><option value="">車両未割当</option></select>
           <button class="primary" type="submit">運用を追加</button>
         </form>
         <div id="operationList" class="data-list"></div>
@@ -116,7 +124,7 @@
       </section>
     </section>
   </main>
-  <footer>汎用ダイヤグラム — 初期開発版</footer>
+  <footer>汎用ダイヤグラム — v0.5</footer>
   <script src="app.js"></script>
 </body>
 </html>
