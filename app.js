@@ -1,309 +1,65 @@
 (() => {
-  const $ = id => document.getElementById(id);
-  const STORAGE_KEY = "universal-railway-diagram-v02";
-  const state = { routeName:"新しいダイヤ", stations:[], trains:[], operations:[] };
-  let editingTrainId = null;
-
-  const makeId = () => "id-" + Date.now() + "-" + Math.random().toString(16).slice(2,7);
-  const parseTime = value => {
-    if (!value) return null;
-    const m = /^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/.exec(value.trim());
-    if (!m || Number(m[1]) > 47) return null;
-    return Number(m[1])*3600 + Number(m[2])*60 + Number(m[3] || 0);
-  };
-  const fmt = s => `${String(Math.floor(s/3600)%24).padStart(2,"0")}:${String(Math.floor(s/60)%60).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
-  const escapeHtml = s => String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const saveLocal = () => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-    catch(e) { console.warn("自動保存できませんでした",e); }
-  };
-  const loadLocal = () => {
-    try {
-      const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      if (data && Array.isArray(data.stations) && Array.isArray(data.trains)) {
-        state.routeName=data.routeName||"新しいダイヤ";
-        state.stations=data.stations; state.trains=data.trains;
-        state.operations=Array.isArray(data.operations)?data.operations:[];
-      }
-    } catch(e) { console.warn("保存データを読み込めませんでした",e); }
-  };
-  const setDirty = () => { saveLocal(); renderAll(); };
-
-  function showPanel(name) {
-    document.querySelectorAll(".panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${name}`));
-    document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.panel===name));
-    if(name==="trains") renderTimeInputs();
-  }
-  document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>showPanel(b.dataset.panel)));
-  $("routeName").addEventListener("input",e=>{state.routeName=e.target.value;saveLocal();});
-
-  $("stationForm").addEventListener("submit",e=>{
-    e.preventDefault();
-    const name=$("stationName").value.trim(), distance=Number($("stationDistance").value);
-    if(!name||!Number.isFinite(distance)||distance<0)return;
-    state.stations.push({id:makeId(),name,distance,tracks:["1番線","2番線"]});
-    state.stations.sort((a,b)=>a.distance-b.distance);
-    e.target.reset(); setDirty();
-  });
-
-  function renderStations(){
-    const list=$("stationList"); list.innerHTML="";
-    state.stations.forEach(st=>{
-      const card=document.createElement("div");card.className="data-card";
-      const info=document.createElement("div");
-      info.innerHTML=`<strong>${escapeHtml(st.name)}</strong><small>起点から ${st.distance} km</small>`;
-      const controls=document.createElement("div");controls.className="actions";
-      const input=document.createElement("input");input.value=(st.tracks||[]).join(", ");input.placeholder="番線をカンマ区切り";input.style.maxWidth="260px";
-      input.addEventListener("change",()=>{st.tracks=input.value.split(",").map(x=>x.trim()).filter(Boolean);setDirty();});
-      const del=document.createElement("button");del.textContent="削除";
-      del.addEventListener("click",()=>{if(!confirm(`${st.name}を削除しますか？`))return;state.stations=state.stations.filter(x=>x.id!==st.id);state.trains.forEach(t=>{delete t.times[st.id];delete t.platforms[st.id];});setDirty();});
-      controls.append(input,del);card.append(info,controls);list.append(card);
-    });
-    if(!state.stations.length)list.innerHTML='<p class="hint">駅がまだ登録されていません。</p>';
-  }
-
-  const getArrival = (train, sid) => train?.arrivals?.[sid] || train?.times?.[sid] || "";
-  const getDeparture = (train, sid) => train?.departures?.[sid] || train?.times?.[sid] || "";
-
-  function renderTimeInputs(train=null){
-    const wrap=$("timeInputs");wrap.innerHTML="";
-    state.stations.forEach(st=>{
-      const cell=document.createElement("div");cell.className="time-cell";
-      const title=document.createElement("strong");title.textContent=st.name;cell.append(title);
-      const arrLabel=document.createElement("label");arrLabel.textContent="到着";
-      const arr=document.createElement("input");arr.placeholder="HH:MM:SS";arr.inputMode="decimal";arr.value=getArrival(train,st.id);arr.dataset.stationId=st.id;arr.dataset.kind="arrival";arrLabel.append(arr);cell.append(arrLabel);
-      const depLabel=document.createElement("label");depLabel.textContent="発車";
-      const dep=document.createElement("input");dep.placeholder="HH:MM:SS";dep.inputMode="decimal";dep.value=getDeparture(train,st.id);dep.dataset.stationId=st.id;dep.dataset.kind="departure";depLabel.append(dep);cell.append(depLabel);
-      const platform=document.createElement("select");platform.add(new Option("番線未指定",""));
-      (st.tracks||[]).forEach(t=>platform.add(new Option(t,t)));
-      platform.value=train?.platforms?.[st.id]||"";platform.dataset.platformStationId=st.id;
-      cell.append(platform);wrap.append(cell);
-    });
-    if(!state.stations.length)wrap.innerHTML='<p class="hint">先に「駅・番線設定」から駅を登録してください。</p>';
-    renderOperationSelect(train?.operationId||"");
-  }
-
-  function renderOperationSelect(selected=""){
-    const select=$("trainOperation");if(!select)return;
-    select.innerHTML="";select.add(new Option("未割当",""));
-    state.operations.forEach(op=>select.add(new Option(`${op.number}${op.vehicle?" / "+op.vehicle:""}`,op.id)));
-    select.value=selected;
-  }
-
-  $("trainForm").addEventListener("submit",e=>{
-    e.preventDefault();
-    if(!state.stations.length)return alert("先に駅を登録してください。");
-    const arrivals={},departures={},times={},platforms={};
-    for(const input of document.querySelectorAll("#timeInputs input")){
-      const v=input.value.trim();
-      if(v&&parseTime(v)===null)return alert("時刻は HH:MM または HH:MM:SS 形式で入力してください。");
-      if(v){const normalized=v.length===5?v+":00":v; (input.dataset.kind==="arrival"?arrivals:departures)[input.dataset.stationId]=normalized;}
-    }
-    document.querySelectorAll("#timeInputs select").forEach(input=>{if(input.value)platforms[input.dataset.platformStationId]=input.value;});
-    const stationsWithTime=new Set([...Object.keys(arrivals),...Object.keys(departures)]);
-    if(stationsWithTime.size<2)return alert("少なくとも2駅分の時刻を入力してください。");
-    stationsWithTime.forEach(sid=>times[sid]=departures[sid]||arrivals[sid]);
-    // 同一駅で到着と発車の順序が逆転していないか確認
-    for(const sid of stationsWithTime){if(arrivals[sid]&&departures[sid]&&parseTime(departures[sid])<parseTime(arrivals[sid]))return alert("発車時刻が到着時刻より前になっています。");}
-    const train={id:editingTrainId||makeId(),number:$("trainNumber").value.trim(),type:$("trainType").value.trim(),destination:$("trainDestination").value.trim(),color:$("trainColor").value,arrivals,departures,times,platforms,operationId:$("trainOperation").value};
-    const index=state.trains.findIndex(t=>t.id===train.id);
-    if(index>=0)state.trains[index]=train;else state.trains.push(train);
-    editingTrainId=null;e.target.reset();$("trainColor").value="#006d69";e.target.querySelector('button[type="submit"]').textContent="列車を登録・更新";setDirty();
-  });
-
-  function renderTrains(){
-    const list=$("trainList");list.innerHTML="";
-    state.trains.forEach(t=>{
-      const op=state.operations.find(o=>o.id===t.operationId);
-      const card=document.createElement("div");card.className="data-card";
-      const info=document.createElement("div");
-      info.innerHTML=`<strong>${escapeHtml(t.number)} ${escapeHtml(t.type)}</strong><small>${escapeHtml(t.destination||"行先未設定")} ／ ${Object.keys(t.times||{}).length}駅入力 ／ 運用：${escapeHtml(op?.number||"未割当")}</small>`;
-      const controls=document.createElement("div");controls.className="actions";
-      const edit=document.createElement("button");edit.textContent="編集";edit.style.background="#e7f2f0";edit.style.color="#005550";
-      edit.addEventListener("click",()=>{editingTrainId=t.id;$("trainNumber").value=t.number;$("trainType").value=t.type;$("trainDestination").value=t.destination;$("trainColor").value=t.color;renderTimeInputs(t);$("trainForm").querySelector('button[type="submit"]').textContent="変更を保存";showPanel("trains");window.scrollTo({top:0,behavior:"smooth"});});
-      const del=document.createElement("button");del.textContent="削除";del.addEventListener("click",()=>{state.trains=state.trains.filter(x=>x.id!==t.id);setDirty();});
-      controls.append(edit,del);card.append(info,controls);list.append(card);
-    });
-    if(!state.trains.length)list.innerHTML='<p class="hint">列車がまだ登録されていません。</p>';
-  }
-
-  $("operationForm").addEventListener("submit",e=>{
-    e.preventDefault();
-    const number=$("operationNumber").value.trim();if(!number)return;
-    if(state.operations.some(o=>o.number===number))return alert("同じ運用番号が既に登録されています。");
-    state.operations.push({id:makeId(),number,vehicle:$("operationVehicle").value.trim()});
-    e.target.reset();setDirty();
-  });
-
-  function renderOperations(){
-    const list=$("operationList");list.innerHTML="";
-    state.operations.forEach(op=>{
-      const trains=state.trains.filter(t=>t.operationId===op.id);
-      const details=trains.map(t=>t.number).join(" → ")||"割当列車なし";
-      const card=document.createElement("div");card.className="data-card";
-      const info=document.createElement("div");
-      info.innerHTML=`<strong>運用 ${escapeHtml(op.number)}</strong><small>${escapeHtml(op.vehicle||"車両未設定")} ／ ${escapeHtml(details)}</small>`;
-      const del=document.createElement("button");del.textContent="削除";
-      del.addEventListener("click",()=>{if(!confirm(`運用 ${op.number}を削除しますか？`))return;state.operations=state.operations.filter(x=>x.id!==op.id);state.trains.forEach(t=>{if(t.operationId===op.id)t.operationId="";});setDirty();});
-      card.append(info,del);list.append(card);
-    });
-    if(!state.operations.length)list.innerHTML='<p class="hint">運用がまだ登録されていません。</p>';
-  }
-
-
-  function getTrainPath(train) {
-    const events = state.stations.map((station,index) => {
-      const arrRaw=getArrival(train,station.id), depRaw=getDeparture(train,station.id);
-      const arr=arrRaw?parseTime(arrRaw):null, dep=depRaw?parseTime(depRaw):null;
-      const seconds=dep!==null?dep:arr;
-      return seconds===null?null:{station,index,seconds,arrival:arr,departure:dep,platform:train.platforms?.[station.id]||""};
-    }).filter(Boolean).sort((a,b)=>a.index-b.index);
-    return events.length>=2?{first:events[0],last:events[events.length-1],events}:null;
-  }
-
-  function makeCheckCard(title, detail, status) {
-    const card=document.createElement("div");
-    card.className=`data-card ${status==="error"?"status-error":status==="warn"?"status-warn":"status-ok"}`;
-    const info=document.createElement("div");
-    info.innerHTML=`<strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small>`;
-    const tag=document.createElement("span");
-    tag.className="status-tag";
-    tag.textContent=status==="error"?"要確認":status==="warn"?"注意":"OK";
-    card.append(info,tag);
-    return card;
-  }
-
-  function renderChecks() {
-    const platformBox=$("platformChecks"), operationBox=$("operationChecks");
-    if(!platformBox || !operationBox) return;
-    platformBox.innerHTML=""; operationBox.innerHTML="";
-    const platformEvents=[];
-    state.trains.forEach(train=>{
-      state.stations.forEach(station=>{
-        const arrRaw=getArrival(train,station.id),depRaw=getDeparture(train,station.id);
-        const arr=arrRaw?parseTime(arrRaw):null,dep=depRaw?parseTime(depRaw):null;
-        const start=arr!==null?arr:(dep!==null?dep:null),finish=dep!==null?dep:(arr!==null?arr:null);
-        const platform=train.platforms?.[station.id];
-        if(start!==null&&finish!==null&&platform)platformEvents.push({train,station,platform,start,finish});
-      });
-    });
-    const grouped=new Map();
-    platformEvents.forEach(ev=>{
-      const key=[ev.station.id,ev.platform].join("|");
-      if(!grouped.has(key))grouped.set(key,[]);
-      grouped.get(key).push(ev);
-    });
-    let conflictCount=0;
-    grouped.forEach(events=>{
-      events.sort((a,b)=>a.start-b.start);
-      for(let i=0;i<events.length;i++){
-        for(let j=i+1;j<events.length;j++){
-          if(events[j].start>events[i].finish)break;
-          if(events[i].train.id===events[j].train.id)continue;
-          conflictCount++;
-          const a=events[i],b=events[j];
-          platformBox.append(makeCheckCard(
-            `${a.station.name} ${a.platform}`,
-            `${a.train.number}（${fmt(a.start)}〜${fmt(a.finish)}）と ${b.train.number}（${fmt(b.start)}〜${fmt(b.finish)}）の使用時間が重複`,
-            "error"
-          ));
-        }
-      }
-    });
-    if(!conflictCount){
-      platformBox.append(makeCheckCard("同時刻の番線重複なし",`${platformEvents.length}件の番線指定を確認しました（停車時間の重複は未判定）`,"ok"));
-    }
-
-    let operationCount=0;
-    state.operations.forEach(op=>{
-      const assigned=state.trains
-        .map(train=>({train,path:getTrainPath(train)}))
-        .filter(item=>item.train.operationId===op.id && item.path)
-        .sort((a,b)=>a.path.first.seconds-b.path.first.seconds);
-      if(!assigned.length){
-        operationBox.append(makeCheckCard(`運用 ${op.number}`, "割当列車または有効な時刻がありません","warn"));
-        operationCount++;
-        return;
-      }
-      let issues=0;
-      for(let i=0;i<assigned.length-1;i++){
-        const a=assigned[i],b=assigned[i+1];
-        const gap=b.path.first.seconds-a.path.last.seconds;
-        if(a.path.last.index!==b.path.first.index){
-          operationBox.append(makeCheckCard(
-            `運用 ${op.number}：${a.train.number} → ${b.train.number}`,
-            `前列車の到着駅は${a.path.last.station.name}、次列車の出発駅は${b.path.first.station.name}です。駅が一致しません。`,
-            "error"
-          ));
-          issues++;
-        } else if(gap<0){
-          operationBox.append(makeCheckCard(
-            `運用 ${op.number}：${a.train.number} → ${b.train.number}`,
-            `次列車の出発が前列車の到着より ${Math.abs(gap)} 秒早くなっています。`,
-            "error"
-          ));
-          issues++;
-        } else {
-          operationBox.append(makeCheckCard(
-            `運用 ${op.number}：${a.train.number} → ${b.train.number}`,
-            `${a.path.last.station.name}で接続。時刻差 ${Math.floor(gap/60)}分${gap%60}秒（折返し時間の適否は未判定）`,
-            "ok"
-          ));
-        }
-      }
-      if(assigned.length===1){
-        operationBox.append(makeCheckCard(`運用 ${op.number}`,`${assigned[0].train.number} のみ割当済み。接続先はありません`,"warn"));
-      }
-      operationCount++;
-    });
-    if(!state.operations.length) operationBox.append(makeCheckCard("運用未登録","先に車両運用を登録してください","warn"));
-    $("diagramSummary").textContent=`${state.stations.length}駅・${state.trains.length}列車・秒単位`;
-  }
-
-  $("refreshChecks")?.addEventListener("click",renderChecks);
-
-  function renderDiagram(){
-    const svg=$("diagram"),width=Math.max(700,state.stations.length*125+100),height=600;
-    svg.setAttribute("viewBox",`0 0 ${width} ${height}`);svg.innerHTML="";
-    const NS="http://www.w3.org/2000/svg";
-    const add=(tag,attrs,parent=svg,text=null)=>{const el=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));if(text!==null)el.textContent=text;parent.append(el);return el;};
-    if(state.stations.length<2){add("text",{x:30,y:50,fill:"#687875","font-size":15},"駅を2つ以上登録するとダイヤを表示します。");$("diagramSummary").textContent="駅を登録してください";return;}
-    const vals=state.trains.flatMap(t=>[...Object.values(t.arrivals||{}),...Object.values(t.departures||{}),...Object.values(t.times||{})].map(parseTime)).filter(v=>v!==null);
-    const min=Math.floor((vals.length?Math.min(...vals):21600)/3600)*3600,max=Math.ceil((vals.length?Math.max(...vals):79200)/3600)*3600;
-    const top=35,bottom=height-55,left=70,right=width-35;
-    const x=i=>left+(right-left)*i/(state.stations.length-1),y=t=>bottom-(t-min)/(Math.max(3600,max-min))*(bottom-top);
-    for(let h=Math.floor(min/3600);h<=Math.ceil(max/3600);h++){const yy=y(h*3600);add("line",{x1:left,y1:yy,x2:right,y2:yy,stroke:"#e5ecea","stroke-width":1});add("text",{x:left-12,y:yy+4,"text-anchor":"end",fill:"#687875","font-size":11},`${String(Math.floor(h)%24).padStart(2,"0")}:00`);}
-    state.stations.forEach((st,i)=>{const xx=x(i);add("line",{x1:xx,y1:top,x2:xx,y2:bottom,stroke:"#cbd8d5","stroke-width":1});add("text",{x:xx,y:bottom+23,"text-anchor":"middle",fill:"#263936","font-size":12},st.name);});
-    state.trains.forEach(t=>{
-      const pts=[];state.stations.forEach((st,i)=>{
-        const ar=getArrival(t,st.id),dp=getDeparture(t,st.id),a=ar?parseTime(ar):null,d=dp?parseTime(dp):null;
-        if(a!==null&&d!==null&&d>a)add("line",{x1:x(i),y1:y(a),x2:x(i),y2:y(d),stroke:t.color||"#006d69","stroke-width":3});
-        const tm=d!==null?d:a;if(tm!==null)pts.push(`${x(i)},${y(tm)}`);
-      });
-      if(pts.length>=2){add("polyline",{points:pts.join(" "),fill:"none",stroke:t.color||"#006d69","stroke-width":2.5,"stroke-linejoin":"round","stroke-linecap":"round"});pts.forEach(p=>{const[cx,cy]=p.split(",");add("circle",{cx,cy,r:3.5,fill:t.color||"#006d69",stroke:"white","stroke-width":1});});}
-    });
-    $("diagramSummary").textContent=`${state.stations.length}駅・${state.trains.length}列車・秒単位`;
-  }
-
-  function renderAll(){
-    $("routeName").value=state.routeName;renderStations();renderTimeInputs();renderTrains();renderOperations();renderDiagram();renderChecks();saveLocal();
-  }
-
-  $("exportBtn").addEventListener("click",()=>{
-    const blob=new Blob([JSON.stringify({...state,format:"universal-railway-diagram",version:2},null,2)],{type:"application/json"});
-    const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="railway-diagram-v02.json";a.click();URL.revokeObjectURL(url);
-  });
-  $("importBtn").addEventListener("click",()=>$("importFile").click());
-  $("importFile").addEventListener("change",async e=>{
-    const file=e.target.files[0];if(!file)return;
-    try{const data=JSON.parse(await file.text());if(!Array.isArray(data.stations)||!Array.isArray(data.trains))throw new Error("形式違い");state.routeName=data.routeName||"読み込んだダイヤ";state.stations=data.stations;state.trains=data.trains;state.operations=Array.isArray(data.operations)?data.operations:[];setDirty();}
-    catch(err){alert("JSONを読み込めませんでした。ファイル形式を確認してください。");}
-    e.target.value="";
-  });
-  $("newProjectBtn").addEventListener("click",()=>{
-    if(!confirm("現在のデータを消去して新規作成しますか？先にJSON保存することをおすすめします。"))return;
-    state.routeName="新しいダイヤ";state.stations=[];state.trains=[];state.operations=[];editingTrainId=null;setDirty();
-  });
-
-  loadLocal();renderAll();
+const $=id=>document.getElementById(id);
+const storeKey='universalRailDiagram_v05';
+let data={stations:[],trains:[],vehicles:[],operations:[]};
+try{const saved=JSON.parse(localStorage.getItem(storeKey)||'null');if(saved)data=saved;}catch(e){}
+const save=()=>localStorage.setItem(storeKey,JSON.stringify(data));
+const escapeHTML=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function timeToMin(t){if(!t)return null;let [h,m,s]=t.split(':').map(Number);return h*60+(m||0)+(s||0)/60}
+function timeFmt(t){return t||''}
+function refresh(){
+ renderStations();renderVehicleSelects();renderTimesEditor();renderTrains();renderVehicles();renderOperations();drawDiagram();save();
+}
+function renderStations(){$('stationList').innerHTML=data.stations.map((s,i)=>`<div class="item"><span><strong>${escapeHTML(s.name)}</strong><span class="meta">　${s.distance??''} km</span></span><button data-del-station="${i}">削除</button></div>`).join('')||'<p class="empty">駅が登録されていません</p>'}
+function renderVehicleSelects(){
+ const opts='<option value="">車両未指定</option>'+data.vehicles.map(v=>`<option value="${escapeHTML(v.id)}">${escapeHTML(v.name)}</option>`).join('');
+ $('trainVehicle').innerHTML=opts;$('operationVehicle').innerHTML=opts;$('trainOperation').innerHTML='<option value="">運用未指定</option>'+data.operations.map(o=>`<option value="${escapeHTML(o.id)}">${escapeHTML(o.name)}</option>`).join('');
+}
+function renderTimesEditor(){
+ $('timesEditor').innerHTML=data.stations.map((s,i)=>`<div class="time-row"><label>${escapeHTML(s.name)}</label><input type="time" step="1" data-arr="${i}" aria-label="${escapeHTML(s.name)} 到着"><input type="time" step="1" data-dep="${i}" aria-label="${escapeHTML(s.name)} 発車"></div>`).join('')||'<p class="empty">先に駅を登録してください</p>';
+}
+function renderTrains(){
+ $('trainList').innerHTML=data.trains.map((t,i)=>`<div class="item train-card" style="--train-color:${t.color}"><span><strong>${escapeHTML(t.number)}</strong>　${escapeHTML(t.type)} <span class="meta"> ${escapeHTML(t.destination)} / ${escapeHTML(data.vehicles.find(v=>v.id===t.vehicleId)?.name||'車両未指定')}</span></span><button data-del-train="${i}">削除</button></div>`).join('')||'<p class="empty">列車が登録されていません</p>';
+}
+function renderVehicles(){
+ $('vehicleList').innerHTML=data.vehicles.map((v,i)=>`<div class="item"><span><strong>${escapeHTML(v.name)}</strong><span class="meta"> ${escapeHTML(v.memo)}</span></span><button data-del-vehicle="${i}">削除</button></div>`).join('')||'<p class="empty">車両未登録</p>';
+}
+function renderOperations(){
+ $('operationList').innerHTML=data.operations.map((o,i)=>`<div class="item"><span><strong>${escapeHTML(o.name)}</strong><span class="meta">　${escapeHTML(data.vehicles.find(v=>v.id===o.vehicleId)?.name||'車両未指定')}　|　列車: ${data.trains.filter(t=>t.operationId===o.id).map(t=>escapeHTML(t.number)).join(' → ')||'未割当'}</span></span><button data-del-operation="${i}">削除</button></div>`).join('')||'<p class="empty">運用未登録</p>';
+}
+function drawDiagram(){
+ const el=$('diagramCanvas');if(!data.stations.length||!data.trains.length){el.innerHTML='<p class="empty">駅と列車を登録するとダイヤが表示されます。</p>';return}
+ const W=Math.max(700,100+data.trains.length*65),H=Math.max(320,80+data.stations.length*65),left=130,top=45;
+ const dist=data.stations.map(s=>Number(s.distance)||0),maxD=Math.max(1,...dist);
+ const y=data.stations.map((s,i)=>top+i*(H-top-30)/Math.max(1,data.stations.length-1));
+ const times=data.trains.flatMap(t=>t.events.flatMap(e=>[timeToMin(e.arr),timeToMin(e.dep)].filter(v=>v!==null))).filter(v=>v!==null);
+ if(!times.length){el.innerHTML='<p class="empty">列車の時刻を設定してください。</p>';return}
+ let min=Math.min(...times),max=Math.max(...times);if(max-min<20)max=min+20;
+ const x=m=>left+(m-min)*(W-left-30)/(max-min);
+ let svg=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="列車ダイヤ">`;
+ data.stations.forEach((s,i)=>{svg+=`<line x1="${left}" y1="${y[i]}" x2="${W-20}" y2="${y[i]}" stroke="#dce4e2" stroke-width="1"/><text x="12" y="${y[i]+4}" class="station-label">${escapeHTML(s.name)}</text>`});
+ for(let m=Math.ceil(min/10)*10;m<=max;m+=10){svg+=`<line x1="${x(m)}" y1="25" x2="${x(m)}" y2="${H-20}" stroke="#eef2f1"/><text x="${x(m)}" y="17" text-anchor="middle" class="time-label">${Math.floor(m/60)}:${String(Math.floor(m%60)).padStart(2,'0')}</text>`}
+ data.trains.forEach(t=>{
+  let pts=[];t.events.forEach((e,i)=>{const yy=y[i];if(e.arr)pts.push({x:x(timeToMin(e.arr)),y:yy});if(e.dep)pts.push({x:x(timeToMin(e.dep)),y:yy})});
+  if(pts.length<2)return;
+  svg+=`<polyline fill="none" stroke="${t.color}" stroke-width="2" points="${pts.map(p=>p.x+','+p.y).join(' ')}"/>`;
+  pts.forEach(p=>svg+=`<circle cx="${p.x}" cy="${p.y}" r="2.3" fill="${t.color}"/>`);
+  svg+=`<text x="${pts[0].x+4}" y="${pts[0].y-5}" class="train-label">${escapeHTML(t.number)}</text>`;
+ });svg+='</svg>';el.innerHTML=svg;
+}
+$('stationForm').addEventListener('submit',e=>{e.preventDefault();data.stations.push({name:$('stationName').value.trim(),distance:$('stationDistance').value});$('stationForm').reset();refresh()});
+$('trainForm').addEventListener('submit',e=>{e.preventDefault();const events=data.stations.map((s,i)=>({arr:document.querySelector(`[data-arr="${i}"]`)?.value||'',dep:document.querySelector(`[data-dep="${i}"]`)?.value||''}));data.trains.push({id:crypto.randomUUID(),number:$('trainNumber').value.trim(),type:$('trainType').value,destination:$('trainDestination').value,color:$('trainColor').value,vehicleId:$('trainVehicle').value,operationId:$('trainOperation').value||null,events});$('trainForm').reset();$('trainColor').value='#006d69';refresh()});
+$('vehicleForm').addEventListener('submit',e=>{e.preventDefault();data.vehicles.push({id:crypto.randomUUID(),name:$('vehicleName').value.trim(),memo:$('vehicleMemo').value});$('vehicleForm').reset();refresh()});
+$('operationForm').addEventListener('submit',e=>{e.preventDefault();const op={id:crypto.randomUUID(),name:$('operationName').value,vehicleId:$('operationVehicle').value};data.operations.push(op);$('operationForm').reset();refresh()});
+document.addEventListener('click',e=>{
+ const b=e.target.closest('button');if(!b)return;
+ if(b.dataset.delStation!==undefined){data.stations.splice(+b.dataset.delStation,1);data.trains.forEach(t=>t.events.splice(+b.dataset.delStation,1));refresh()}
+ if(b.dataset.delTrain!==undefined){data.trains.splice(+b.dataset.delTrain,1);refresh()}
+ if(b.dataset.delVehicle!==undefined){const v=data.vehicles[+b.dataset.delVehicle];if(data.trains.some(t=>t.vehicleId===v.id)||data.operations.some(o=>o.vehicleId===v.id)){alert('列車または運用で使用中の車両は削除できません');return}data.vehicles.splice(+b.dataset.delVehicle,1);refresh()}
+ if(b.dataset.delOperation!==undefined){data.operations.splice(+b.dataset.delOperation,1);refresh()}
+ if(b.classList.contains('tab')){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===b.dataset.view))}
+});
+$('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='rail-diagram.json';a.click();URL.revokeObjectURL(a.href)};
+$('importFile').onchange=async e=>{try{const obj=JSON.parse(await e.target.files[0].text());if(!obj.stations||!obj.trains)throw Error('形式違い');data={stations:obj.stations,trains:obj.trains,vehicles:obj.vehicles||[],operations:obj.operations||[]};refresh()}catch(err){alert('読み込みに失敗しました: '+err.message)}e.target.value=''};
+refresh();
 })();
